@@ -144,6 +144,21 @@ function downloadFile(fileName, fileUrl, callback) {
     fs.mkdirSync(FILE_PATH, { recursive: true });
   }
 
+  // 镜像内已预下载同名二进制(Dockerfile: .tmp/web,.tmp/bot,.tmp/v1) → 直接复制, 跳过 55MB 下载
+  // Kubeletto scale-to-zero 会在无入站流量 ~60s 时杀 pod, 启动期长下载会被反复打断
+  try {
+    const presetName = (fileUrl.split('/').pop() || '').trim();
+    const presetPath = path.join(FILE_PATH, presetName);
+    if (presetName && fs.existsSync(presetPath) && !fs.existsSync(filePath)) {
+      fs.copyFileSync(presetPath, filePath);
+      fs.chmodSync(filePath, 0o775);
+      console.log(`Using baked-in ${presetName} for ${path.basename(filePath)}`);
+      return callback(null, filePath);
+    }
+  } catch (e) {
+    console.error(`Preset reuse check failed for ${fileUrl}: ${e.message}`);
+  }
+
   const writer = fs.createWriteStream(filePath);
 
   axios({
